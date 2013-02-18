@@ -35,7 +35,7 @@ class SubredditController {
 		redirect(action: "list")
 	}
 
-		def show(Long id) {
+	def show(Long id) {
 			def subredditInstance = Subreddit.get(id)
 			if (!subredditInstance) {
 				flash.message = message(code: 'default.not.found.message', args: [message(code: 'subreddit.label', default: 'Subreddit'), id])
@@ -105,14 +105,14 @@ class SubredditController {
 			}
 		}
 
-		def collectFollowLinks = { ElementCommand cmd ->
-			println "Hello"
+		def collectFollowLinks = {
+//			println "Hello"
 			def id = params.id
-			println "Id: $id"
+			println "Subreddit Id: $id"
 			Subreddit subreddit = Subreddit.findById(id)
-			println "For Subreddit: $subreddit"
+//			println "For Subreddit: $subreddit"
 			new PageParser().getTopicsFromSubreddit(subreddit.name)
-			println "Doing Render: [id: $subreddit.id, count: ${subreddit.topics.size()}]"
+//			println "Doing Render: [id: $subreddit.id, count: ${subreddit.topics.size()}]"
 			render([id: subreddit.id, count: subreddit.topics.size()] as JSON)
 		}
 		
@@ -122,41 +122,40 @@ class SubredditController {
 			render([message: "Hello", value: 1, id: params.itemName] as JSON)
 		}
 
-		def organizeDownloadsFromTopics = {
-			ElementCommand cmd ->
-			Subreddits.list().each{Subreddit subreddit ->
-				subreddit.topics.each{
-					RedditTopic topic ->
-					if (!topic.followed){
-						topic.handle()
-					}
-				}
-			}
-			redirect (action: 'list')
-		}
-
-		def doDownloads = {
-			ElementCommand cmd ->
-			int count = 0
-			Subreddit.list().each{
-				Subreddit subreddit = it
-				subreddit.topics.each{
-					RedditTopic topic ->
-					topic.downloadableItems.each{
-						DownloadableItem downloadable ->
-						if (!downloadable.downloaded){
-							downloadable.download()
-							count++
-							render template: "downloadStatus", model: [downloads: [count: count, current: downloadable.link]]
-							downloadable.downloaded = true
-							downloadable.save(flush: true)
+		def organizeDownloadsFromTopics = {			
+			println "Hello"
+			def id = params.id
+			println "Id: $id"
+			Subreddit subreddit = Subreddit.findById(id)
+			println "For Subreddit: $subreddit"
+			int totalCount = 0
+			subreddit.topics.each{ RedditTopic topic ->
+				if (!topic.followed){
+					topic.handle()
+					def topicList = topic.downloadableItems
+					topicList.each{DownloadableItem di ->
+						if (!di.downloaded){
+							totalCount++
 						}
 					}
 				}
 			}
+			render([id: subreddit.id, count: totalCount] as JSON)
+		}
+
+	def doDownloads = {
+		DownloadableItem.list().each{ DownloadableItem downloadable ->
+		if (!downloadable.downloaded){
+			flash.message = "Downloading: $downloadable.link"
+			downloadable.download()
+			downloadable.downloaded = true
+			if (!downloadable.save(flush: true)){
+				downloadable.errors.each{ println it}
+			}
 		}
 	}
-
+		}
 	class ElementCommand {
 		List subreddits
 	}
+}

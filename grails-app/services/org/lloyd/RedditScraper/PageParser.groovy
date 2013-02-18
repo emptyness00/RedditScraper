@@ -13,69 +13,75 @@ class PageParser {
 	private List redditLinks = []
 	public downloadAllImages = false
 	public was18Form = false
-	
+
 	public HTTPBuilder http
 
 	public def getLinks(FollowableItem followable){
-		if (followable && followable.domain == "imgur.com"){
-			downloadAllImages = true
-		}
-		String domain = followable.link.toString().substring(0, followable.link.toString().indexOf(".com/") + ".com/".length())
-		String urlPath = followable.link.toString().substring(followable.link.toString().indexOf(".com/") + ".com/".length())
-		if (urlPath.contains("#")){
-			urlPath = urlPath.substring(0, urlPath.indexOf("#"))
-		}
-		if (!http){
-			http = new HTTPBuilder(domain)
-		}
 		try{
-			http.get(path: urlPath){resp, html ->
-				def listOfImages = getImageNames(html)
-				if (listOfImages.size() > 0){
-					listOfImages.each { String imageName, String ext ->
-						if (domain.contains("imgur.com")){
-							domain = "http://i.imgur.com/"
-						}
-						String imgurl = "$domain$imageName$ext"
-						def download = new DownloadableItem(link: imgurl, topic: followable.topic)
-						if (!download.save(flush: true)){
-							download.errors.each{
-								println "Error Saving Download: $it"
+			if (followable && followable.domain == "imgur.com"){
+				downloadAllImages = true
+			}
+			String domain = followable.link.toString().substring(0, followable.link.toString().indexOf(".com/") + ".com/".length())
+			String urlPath = followable.link.toString().substring(followable.link.toString().indexOf(".com/") + ".com/".length())
+			if (urlPath.contains("#")){
+				urlPath = urlPath.substring(0, urlPath.indexOf("#"))
+			}
+			if (!http){
+				http = new HTTPBuilder(domain)
+			}
+			try{
+				http.get(path: urlPath){
+					resp, html ->
+					def listOfImages = getImageNames(html)
+					if (listOfImages.size() > 0){
+						listOfImages.each {
+							String imageName, String ext ->
+							if (domain.contains("imgur.com")){
+								domain = "http://i.imgur.com/"
+							}
+							String imgurl = "$domain$imageName$ext"
+							def download = new DownloadableItem(link: imgurl, topic: followable.topic)
+							if (!download.save(flush: true)){
+								download.errors.each{
+									println "Error Saving Download: $it"
+								}
 							}
 						}
-					}
-				} else {
-					if (domain.contains("imgur.com")){
-						domain = "http://i.imgur.com/"
-						String imgurl = "$domain$urlPath"
-						if (hasNoExtension(imgurl)){
-							imgurl = "${imgurl}.jpg"
-						}
-						def download = new DownloadableItem(link: imgurl, topic: followable.topic)
-						if (!download.save(flush: true)){
-							download.errors.each{
-								println "Error Saving Download: $it"
+					} else {
+						if (domain.contains("imgur.com")){
+							domain = "http://i.imgur.com/"
+							String imgurl = "$domain$urlPath"
+							if (hasNoExtension(imgurl)){
+								imgurl = "${imgurl}.jpg"
+							}
+							def download = new DownloadableItem(link: imgurl, topic: followable.topic)
+							if (!download.save(flush: true)){
+								download.errors.each{
+									println "Error Saving Download: $it"
+								}
 							}
 						}
 					}
 				}
-				
+			} catch(HttpResponseException hrE){
+				if (!hrE.message.contains("Not Found")){
+					throw hrE
+				}
+			} catch (Exception ex){
+				ex.printStackTrace()
+				println "Unknown exception, continuing if possible"
 			}
-		} catch(HttpResponseException hrE){
-		    if (!hrE.message.contains("Not Found")){
-				throw hrE
+			followable.followed = true
+			if (!followable.save(flush:true)){
+				followable.errors.each{
+					println "Error saving Followable: $it"
+				}
 			}
-		} catch (Exception ex){
-			ex.printStackTrace()
-			println "Unknown exception, continuing if possible"
+		} catch (Exception e){
+			new LoggedEvent(criticalLevel: 0, eventDesc: e.message, eventDateTime: new Date(), associatedLink: followable.link).save(flush: true)
 		}
-		followable.followed = true
-		if (!followable.save(flush:true)){
-			followable.errors.each{ println "Error saving Followable: $it" }
-		}
-		
 	}
-	
+
 	public boolean hasNoExtension(String link){
 		String fileName = "${link.tokenize("/")[-1]}"
 		if (!fileName.contains(".")){
@@ -112,7 +118,11 @@ class PageParser {
 
 	public String getNextUrl(){
 		if (stripForDomain(parentUrl) == "www.reddit.com"){
-			html.depthFirst().collect { it }.findAll { it.name() == "a" }.each {
+			html.depthFirst().collect {
+				it
+			}.findAll {
+				it.name() == "a"
+			}.each {
 				String domain = stripForDomain(it.@href.text())
 				if (domain == "www.reddit.com" && it.@href.text().contains("comments")){
 					redditLinks << it.@href.text()
@@ -127,22 +137,26 @@ class PageParser {
 			return ""
 		}
 	}
-	
+
 	public void getTopicsFromSubreddit(String subreddit){
 		if (!http){
 			http = new HTTPBuilder("http://www.reddit.com/r/$subreddit")
 		}
 		doParse(http, [limit: 100], subreddit, "", false)
 	}
-	
+
 	public String doParse(HTTPBuilder http, def params, String subreddit, String lastLastId, boolean finished){
 		String lastId
 		if (lastLastId){
 			params = [limit: 100, after: "t3_$lastLastId"]
 		}
-		http.get( path: "/r/$subreddit/.json", query: params ) { resp, json ->
+		String path = "/r/$subreddit/.json"
+		//		println "Getting from path: $path"
+		http.get( path: path, query: params ) { resp, json ->
+			//			println "Returned Json: $json"
 			json.each {
 				String key = it.key
+
 				if (key == "data"){
 					def children = it.value.get("children")
 					if (children){
@@ -155,12 +169,16 @@ class PageParser {
 							Long created = child.get("data").get("created")
 							Date date = new Date(created)
 							RedditTopic topic = new RedditTopic(name: name, link: url, author: author, subreddit: Subreddit.findByName(subreddit), timestamp: new Date(created))
-							topic.store()
+							//							println "Found topic with data: $topic"
+							if (!RedditTopic.findByName(name)){
+								topic.store()
+							}
+							//							println "Done storing $topic"
 							lastId = child.get("data").get("id")
 						}
 						if (lastId != lastLastId){
 							doParse(http, params, subreddit, lastId, finished)
-						}						
+						}
 					}
 				}
 			}

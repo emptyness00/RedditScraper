@@ -10,8 +10,8 @@ class BootStrap {
 			case "development":
 				Subreddit subreddit1 = new Subreddit(name: "cottonpanties")
 				subreddit1.save()
-				Subreddit subreddit2 = new Subreddit(name: "celebritiesgonewild")
-				subreddit2.save()
+//				Subreddit subreddit2 = new Subreddit(name: "celebritiesgonewild")
+//				subreddit2.save()
 				break;
 		}
 	}

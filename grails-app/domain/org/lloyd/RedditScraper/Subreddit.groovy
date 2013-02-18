@@ -22,8 +22,18 @@ class Subreddit {
 	int getAvailableDownloadCount(){
 		int count = 0
 		topics.each{ RedditTopic topic ->
-			count += topic.downloadableItems.size()
+			count += topic.getUndownloadedItems()
 		}
 		return count
+	}
+	
+	def getNewTopics(){
+		def list = []
+		topics.each{ RedditTopic topic ->
+			if (!topic.followed){
+				list << topic
+			}
+		}
+		return list
 	}
 }
