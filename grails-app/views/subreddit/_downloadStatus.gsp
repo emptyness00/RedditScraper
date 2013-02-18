@@ -1,0 +1,1 @@
+<div id="downloadStatus">Downloads: ${downloads.count} Current: ${downloads.current} </div>
